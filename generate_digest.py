@@ -310,10 +310,65 @@ def summarize_with_claude(entries):
 
 
 # --------------------------------------------------------------------------
+# 3b. WEEKLY OVERVIEW (optional — uses Claude API if key is set)
+# --------------------------------------------------------------------------
+
+def generate_weekly_overview(entries):
+    """Produces a short overview paragraph plus a bullet list of key events
+    for the week, using all fetched entries as context. Returns a dict with
+    'overview' (str) and 'key_events' (list of str), or None if unavailable
+    (no API key, no entries, or the call fails for any reason — the digest
+    still renders fine without this section)."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key or not entries:
+        return None
+
+    try:
+        import anthropic
+    except ImportError:
+        print("[warn] anthropic package not installed; skipping weekly overview")
+        return None
+
+    client = anthropic.Anthropic(api_key=api_key)
+
+    listing = "\n".join(
+        f"- [{e['source']}] {e['title']}: {e['summary'][:300]}" for e in entries
+    )
+    prompt = (
+        "Below is a list of this week's news items related to Afghan security. "
+        "Write a short, neutral overview of the week (3-5 sentences) covering "
+        "the main developments, plus a bullet list of the distinct key events "
+        "mentioned (max 8 bullets, one short line each, no editorializing).\n\n"
+        "Respond with ONLY valid JSON in this exact shape, no other text, no "
+        "markdown code fences:\n"
+        '{"overview": "...", "key_events": ["...", "..."]}\n\n'
+        f"News items:\n{listing[:8000]}"
+    )
+
+    try:
+        resp = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=800,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = "".join(
+            block.text for block in resp.content if block.type == "text"
+        ).strip()
+        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip())
+        data = json.loads(text)
+        if "overview" in data and "key_events" in data:
+            return data
+        return None
+    except Exception as e:
+        print(f"[warn] weekly overview generation failed: {e}")
+        return None
+
+
+# --------------------------------------------------------------------------
 # 4. RENDER HTML
 # --------------------------------------------------------------------------
 
-def render_html(entries):
+def render_html(entries, overview=None):
     today = datetime.now(timezone.utc).strftime("%d %B %Y")
     by_source = {}
     for e in entries:
@@ -338,6 +393,19 @@ def render_html(entries):
     if not entries:
         sections = "<p class='empty'>No matching security stories found in the last 7 days.</p>"
 
+    overview_html = ""
+    if overview:
+        bullets = "".join(
+            f"<li>{html.escape(item)}</li>" for item in overview.get("key_events", [])
+        )
+        bullets_block = f"<ul class=\"key-events\">{bullets}</ul>" if bullets else ""
+        overview_html = f"""
+  <section class=\"overview\">
+    <h2>This Week's Overview</h2>
+    <p>{html.escape(overview.get('overview', ''))}</p>
+    {bullets_block}
+  </section>"""
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -355,12 +423,17 @@ def render_html(entries):
   .meta {{ font-size: .8rem; color: #888; margin-top: 4px; }}
   .subtitle {{ color: #555; }}
   .empty {{ color: #888; font-style: italic; }}
+  .overview {{ background: #f1ece4; border: 1px solid #e0d8ca; border-radius: 6px; padding: 20px 24px; margin-top: 24px; }}
+  .overview h2 {{ margin-top: 0; }}
+  .overview p {{ line-height: 1.5; }}
+  .key-events {{ margin: 12px 0 0 0; padding-left: 20px; line-height: 1.6; }}
   footer {{ margin-top: 60px; font-size: .8rem; color: #999; }}
 </style>
 </head>
 <body>
   <h1>{SITE_TITLE}</h1>
   <p class="subtitle">Weekly summary of Afghan security news — generated {today}</p>
+  {overview_html}
   {sections}
   <footer>Auto-generated from RSS sources. See sources.md in the repo for the full source list. Not a substitute for reading original reporting.</footer>
 </body>
@@ -375,7 +448,8 @@ def main():
     entries = fetch_recent_entries()
     print(f"[info] {len(entries)} matching entries found")
     entries = summarize_with_claude(entries)
-    html_out = render_html(entries)
+    overview = generate_weekly_overview(entries)
+    html_out = render_html(entries, overview)
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         f.write(html_out)
     print(f"[info] wrote {OUTPUT_FILE}")
