@@ -2,10 +2,12 @@
 """
 Afghan Security Weekly Digest Generator
 -----------------------------------------
-Pulls a set of RSS feeds, filters entries down to the last 7 days that match
-Afghan-security keywords, optionally summarizes each with the Claude API,
-and renders a static HTML page (index.html) suitable for GitHub Pages or
-any static host.
+Pulls a set of RSS feeds, filters entries to those matching Afghan-security
+keywords, then further filters out anything already shown in a previous run
+(tracked in seen_links.json) so each digest only covers what's new since the
+last successful update — not a fixed calendar week. Optionally summarizes
+each new item with the Claude API, and renders a static HTML page
+(index.html) suitable for GitHub Pages or any static host.
 
 Run manually:
     pip install feedparser requests beautifulsoup4 anthropic python-dateutil --break-system-packages
@@ -13,7 +15,7 @@ Run manually:
     python generate_digest.py
 
 In CI (see .github/workflows/weekly-digest.yml) this runs every Monday
-07:00 GMT and commits the regenerated index.html.
+07:00 GMT and commits the regenerated index.html and seen_links.json.
 """
 
 import os
@@ -77,6 +79,27 @@ AFGHAN_CONTEXT_TERMS = [
 DAYS_LOOKBACK = 7
 OUTPUT_FILE = "index.html"
 SITE_TITLE = "Afghan Security Weekly"
+SEEN_LINKS_FILE = "seen_links.json"
+MAX_SEEN_LINKS = 3000  # cap so this file doesn't grow forever
+
+
+def load_seen_links():
+    """Links already shown in a previous digest. Returns an empty set on the
+    very first run (no history yet — everything found will be 'new')."""
+    try:
+        with open(SEEN_LINKS_FILE, "r", encoding="utf-8") as f:
+            return set(json.load(f))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return set()
+
+
+def save_seen_links(seen: set, new_links: list):
+    """Adds this run's links to the seen set, trims to MAX_SEEN_LINKS (keeping
+    the most recently added), and writes it back for next run to read."""
+    combined = list(seen) + [l for l in new_links if l not in seen]
+    trimmed = combined[-MAX_SEEN_LINKS:]
+    with open(SEEN_LINKS_FILE, "w", encoding="utf-8") as f:
+        json.dump(trimmed, f)
 
 # --------------------------------------------------------------------------
 # 2a. "NO CLEAN RSS" SOURCES — exiled Afghan outlets that keep minimal sites
@@ -335,13 +358,14 @@ def generate_weekly_overview(entries):
         f"- [{e['source']}] {e['title']}: {e['summary'][:300]}" for e in entries
     )
     prompt = (
-        "Below is a list of this week's news items related to Afghanistan. "
-        "Write a short, neutral overview of the week (3-5 sentences) with a "
-        "clear emphasis on security developments — insurgent activity, "
-        "attacks, border/military tensions, and security-force actions. "
-        "Broader governance, humanitarian, or diplomatic news can be "
-        "mentioned for context, but should take a back seat to security "
-        "developments whenever both are present.\n\n"
+        "Below is a list of news items related to Afghanistan, newly detected "
+        "since the last update (i.e. not shown in any previous digest run). "
+        "Write a short, neutral overview (3-5 sentences) with a clear "
+        "emphasis on security developments — insurgent activity, attacks, "
+        "border/military tensions, and security-force actions. Broader "
+        "governance, humanitarian, or diplomatic news can be mentioned for "
+        "context, but should take a back seat to security developments "
+        "whenever both are present.\n\n"
         "Then give a bullet list of the distinct key events (max 8 bullets, "
         "one short line each, no editorializing), ordered with security-"
         "related events first, followed by other notable events.\n\n"
@@ -397,7 +421,7 @@ def render_html(entries, overview=None):
         </section>"""
 
     if not entries:
-        sections = "<p class='empty'>No matching security stories found in the last 7 days.</p>"
+        sections = "<p class='empty'>No new security stories since the last update.</p>"
 
     overview_html = ""
     if overview:
@@ -407,7 +431,7 @@ def render_html(entries, overview=None):
         bullets_block = f"<ul class=\"key-events\">{bullets}</ul>" if bullets else ""
         overview_html = f"""
   <section class=\"overview\">
-    <h2>This Week's Overview</h2>
+    <h2>Since Last Update</h2>
     <p>{html.escape(overview.get('overview', ''))}</p>
     {bullets_block}
   </section>"""
@@ -438,7 +462,7 @@ def render_html(entries, overview=None):
 </head>
 <body>
   <h1>{SITE_TITLE}</h1>
-  <p class="subtitle">Weekly summary of Afghan security news — generated {today}</p>
+  <p class="subtitle">New Afghan security stories since the last update — generated {today}</p>
   {overview_html}
   {sections}
   <footer>Auto-generated from RSS sources. See sources.md in the repo for the full source list. Not a substitute for reading original reporting.</footer>
@@ -452,13 +476,22 @@ def render_html(entries, overview=None):
 
 def main():
     entries = fetch_recent_entries()
-    print(f"[info] {len(entries)} matching entries found")
-    entries = summarize_with_claude(entries)
-    overview = generate_weekly_overview(entries)
-    html_out = render_html(entries, overview)
+    print(f"[info] {len(entries)} entries matched keywords/lookback window")
+
+    seen = load_seen_links()
+    new_entries = [e for e in entries if not e["link"] or e["link"] not in seen]
+    print(f"[info] {len(new_entries)} are new since the last run "
+          f"({len(entries) - len(new_entries)} already shown previously)")
+
+    new_entries = summarize_with_claude(new_entries)
+    overview = generate_weekly_overview(new_entries)
+    html_out = render_html(new_entries, overview)
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         f.write(html_out)
     print(f"[info] wrote {OUTPUT_FILE}")
+
+    save_seen_links(seen, [e["link"] for e in new_entries])
+    print(f"[info] updated {SEEN_LINKS_FILE}")
 
 
 if __name__ == "__main__":
