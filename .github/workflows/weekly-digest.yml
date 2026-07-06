@@ -28,7 +28,7 @@ jobs:
 
       - name: Generate digest
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API }}
         run: python generate_digest.py
 
       - name: Commit updated page
