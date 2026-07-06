@@ -9,6 +9,14 @@ last successful update — not a fixed calendar week. Optionally summarizes
 each new item with the Claude API, and renders a static HTML page
 (index.html) suitable for GitHub Pages or any static host.
 
+Note: sources without a working RSS feed fall back to scraping their listing
+page (see SCRAPE_SOURCES), which only yields a headline + link, not article
+text. Since there's nothing real to summarize for those, they're currently
+dropped from the final output entirely rather than shown with a placeholder
+summary. To bring a source back, either find its real RSS feed, or extend
+scrape_listing_page() (or add a separate step) to fetch the full article
+page and extract real body text.
+
 Run manually:
     pip install feedparser requests beautifulsoup4 anthropic python-dateutil --break-system-packages
     export ANTHROPIC_API_KEY=sk-...        # optional, enables AI summaries
@@ -488,6 +496,16 @@ def render_html(entries, overview=None):
 def main():
     entries = fetch_recent_entries()
     print(f"[info] {len(entries)} entries matched keywords/lookback window")
+
+    # Scraped sources (no RSS feed available) only yield a headline + link,
+    # never real article text — so there's nothing to summarize, and the
+    # user would rather these be omitted entirely than shown with a
+    # "no excerpt available" placeholder.
+    before_scrape_filter = len(entries)
+    entries = [e for e in entries if not e.get("scraped")]
+    dropped = before_scrape_filter - len(entries)
+    if dropped:
+        print(f"[info] dropped {dropped} scraped entries with no summarizable text")
 
     seen = load_seen_links()
     new_entries = [e for e in entries if not e["link"] or e["link"] not in seen]
