@@ -46,7 +46,9 @@ REQUEST_TIMEOUT = 15
 
 FEEDS = [
     {"name": "Khaama Press", "url": "https://www.khaama.com/feed/"},
-    {"name": "Pajhwok Afghan News", "url": "https://pajhwok.com/feed/"},
+    # Pajhwok's old feed URL now 410s (confirmed dead as of July 2026) —
+    # removed until a working replacement URL is found; check pajhwok.com
+    # directly for a current feed link if you want to re-add it.
     {"name": "Ariana News", "url": "https://ariananews.af/feed/"},
     {"name": "Long War Journal", "url": "https://www.longwarjournal.org/feed"},
     {"name": "International Crisis Group - Asia", "url": "https://www.crisisgroup.org/rss/asia.xml"},
@@ -262,8 +264,12 @@ def scrape_listing_page(name, listing_url, base_url, cutoff):
             "source": name + " (scraped)",
             "title": title,
             "link": link,
-            "summary": "",  # no reliable excerpt from listing-page scraping
-            "published": "unknown (scraped listing page)",
+            "summary": "No excerpt available — this source was reached via listing-page "
+                       "scraping rather than RSS, so only the headline and "
+                       "link could be extracted. Click through to read the "
+                       "full story.",
+            "published": "unknown",
+            "scraped": True,
         })
 
     return results
@@ -312,6 +318,9 @@ def summarize_with_claude(entries):
     client = anthropic.Anthropic(api_key=api_key)
 
     for e in entries:
+        if e.get("scraped"):
+            continue  # no article text was scraped, just a headline+link —
+            # nothing for Claude to summarize, so leave the placeholder text
         prompt = (
             "Summarize this news item about Afghan security in 2 concise, "
             "neutral sentences. Do not add opinion or speculation.\n\n"
@@ -355,7 +364,9 @@ def generate_weekly_overview(entries):
     client = anthropic.Anthropic(api_key=api_key)
 
     listing = "\n".join(
-        f"- [{e['source']}] {e['title']}: {e['summary'][:300]}" for e in entries
+        f"- [{e['source']}] {e['title']}"
+        + ("" if e.get("scraped") else f": {e['summary'][:300]}")
+        for e in entries
     )
     prompt = (
         "Below is a list of news items related to Afghanistan, newly detected "
