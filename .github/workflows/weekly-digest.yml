@@ -35,8 +35,8 @@ jobs:
         run: |
           git config user.name "digest-bot"
           git config user.email "actions@github.com"
-          git add index.html
-          git commit -m "Weekly digest: $(date -u +'%Y-%m-%d')" || echo "No changes to commit"
+          git add index.html seen_links.json
+          git commit -m "Digest update: $(date -u +'%Y-%m-%d')" || echo "No changes to commit"
           git push
 
       - name: Upload Pages artifact
