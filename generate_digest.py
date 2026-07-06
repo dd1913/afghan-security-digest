@@ -61,6 +61,19 @@ KEYWORDS = [
     "extremist", "jihadist", "attack", "explosion", "military",
 ]
 
+# Generic security words above (attack, military, explosion, etc.) match plenty
+# of non-Afghan wire stories too — a Khaama Press feed, for instance, carries
+# general international news alongside Afghanistan coverage. So an entry only
+# counts as relevant if it ALSO contains one of these Afghanistan-context
+# anchors. Proper nouns like "taliban" or "kunar" already anchor themselves;
+# this second gate is what catches the generic-keyword-only case.
+AFGHAN_CONTEXT_TERMS = [
+    "afghan", "kabul", "kandahar", "herat", "mazar-i-sharif", "mazar-e-sharif",
+    "jalalabad", "kunduz", "kunar", "helmand", "nangarhar", "panjshir", "wardak",
+    "badakhshan", "ghazni", "paktia", "paktika", "khost", "farah", "logar",
+    "bamiyan", "bamyan", "taliban", "haqqani", "durand line",
+]
+
 DAYS_LOOKBACK = 7
 OUTPUT_FILE = "index.html"
 SITE_TITLE = "Afghan Security Weekly"
@@ -112,7 +125,9 @@ SCRAPE_SOURCES = [
 
 def matches_keywords(text: str) -> bool:
     text = text.lower()
-    return any(kw in text for kw in KEYWORDS)
+    has_security_term = any(kw in text for kw in KEYWORDS)
+    has_afghan_context = any(term in text for term in AFGHAN_CONTEXT_TERMS)
+    return has_security_term and has_afghan_context
 
 
 def parse_pub_date(published):
