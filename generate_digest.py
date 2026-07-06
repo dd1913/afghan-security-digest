@@ -335,10 +335,16 @@ def generate_weekly_overview(entries):
         f"- [{e['source']}] {e['title']}: {e['summary'][:300]}" for e in entries
     )
     prompt = (
-        "Below is a list of this week's news items related to Afghan security. "
-        "Write a short, neutral overview of the week (3-5 sentences) covering "
-        "the main developments, plus a bullet list of the distinct key events "
-        "mentioned (max 8 bullets, one short line each, no editorializing).\n\n"
+        "Below is a list of this week's news items related to Afghanistan. "
+        "Write a short, neutral overview of the week (3-5 sentences) with a "
+        "clear emphasis on security developments — insurgent activity, "
+        "attacks, border/military tensions, and security-force actions. "
+        "Broader governance, humanitarian, or diplomatic news can be "
+        "mentioned for context, but should take a back seat to security "
+        "developments whenever both are present.\n\n"
+        "Then give a bullet list of the distinct key events (max 8 bullets, "
+        "one short line each, no editorializing), ordered with security-"
+        "related events first, followed by other notable events.\n\n"
         "Respond with ONLY valid JSON in this exact shape, no other text, no "
         "markdown code fences:\n"
         '{"overview": "...", "key_events": ["...", "..."]}\n\n'
