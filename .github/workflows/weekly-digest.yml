@@ -2,8 +2,9 @@ name: Weekly Afghan Security Digest
 
 on:
   schedule:
-    # 07:00 GMT every Monday. GitHub Actions cron is UTC, which equals GMT.
-    - cron: "0 7 * * 1"
+    # 07:03 GMT every Monday (nudged 3 min off the hour — GitHub's docs note
+    # exact-hour schedules are more prone to delay under load).
+    - cron: "3 7 * * 1"
   workflow_dispatch: {}   # lets you trigger it manually from the Actions tab too
 
 permissions:
